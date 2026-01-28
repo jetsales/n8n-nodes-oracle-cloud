@@ -130,6 +130,84 @@ export class LmChatOciGenerativeAi implements INodeType {
 					// 		'The maximum number of tokens to generate. Set to -1 for no limit. Be cautious when setting this to a large value, as it can lead to very long outputs.',
 					// },
 				]
+			},
+			{
+				displayName: 'Freeform Tags',
+				name: 'freeformTags',
+				placeholder: 'Add Tag',
+				description: 'Freeform tags for organizing resources. These are flexible key-value pairs but do NOT appear in OCI Cost Tracking reports.',
+				type: 'fixedCollection',
+				typeOptions: {
+					multipleValues: true,
+				},
+				default: {},
+				options: [
+					{
+						name: 'tags',
+						displayName: 'Tags',
+						values: [
+							{
+								displayName: 'Key',
+								name: 'key',
+								type: 'string',
+								default: '',
+								placeholder: 'e.g., cliente, projeto, ambiente',
+								description: 'The tag key',
+							},
+							{
+								displayName: 'Value',
+								name: 'value',
+								type: 'string',
+								default: '',
+								placeholder: 'e.g., acme-corp, chatbot-v2, producao',
+								description: 'The tag value',
+							},
+						],
+					},
+				],
+			},
+			{
+				displayName: 'Defined Tags (Cost Tracking)',
+				name: 'definedTags',
+				placeholder: 'Add Tag',
+				description: 'Defined tags for OCI Cost Tracking. Use namespace "CostTracking" with keys: Cliente, Projeto, CentroCusto, Ambiente.',
+				type: 'fixedCollection',
+				typeOptions: {
+					multipleValues: true,
+				},
+				default: {},
+				options: [
+					{
+						name: 'tags',
+						displayName: 'Tags',
+						values: [
+							{
+								displayName: 'Namespace',
+								name: 'namespace',
+								type: 'string',
+								default: 'CostTracking',
+								placeholder: 'CostTracking',
+								description: 'The tag namespace (default: CostTracking)',
+							},
+							{
+								displayName: 'Key',
+								name: 'key',
+								type: 'string',
+								default: '',
+								placeholder: 'Cliente, Projeto, CentroCusto, Ambiente',
+								description: 'The tag key: Cliente, Projeto, CentroCusto (cost tracking) or Ambiente',
+							},
+							{
+								displayName: 'Value',
+								name: 'value',
+								type: 'string',
+								default: '',
+								placeholder: 'e.g., chat-pos, transcricao-audio, CC-001',
+								description: 'The tag value',
+							},
+						],
+					},
+				],
 			}
 
 		],
@@ -182,6 +260,35 @@ export class LmChatOciGenerativeAi implements INodeType {
 
 			const options = this.getNodeParameter('options', itemIndex, {}) as object;
 
+			// Process freeform tags
+			const freeformTagsParam = this.getNodeParameter('freeformTags', itemIndex, {}) as {
+				tags?: Array<{ key: string; value: string }>;
+			};
+			const freeformTags: Record<string, string> = {};
+			if (freeformTagsParam.tags) {
+				for (const tag of freeformTagsParam.tags) {
+					if (tag.key) {
+						freeformTags[tag.key] = tag.value || '';
+					}
+				}
+			}
+
+			// Process defined tags
+			const definedTagsParam = this.getNodeParameter('definedTags', itemIndex, {}) as {
+				tags?: Array<{ namespace: string; key: string; value: string }>;
+			};
+			const definedTags: Record<string, Record<string, string>> = {};
+			if (definedTagsParam.tags) {
+				for (const tag of definedTagsParam.tags) {
+					if (tag.namespace && tag.key) {
+						if (!definedTags[tag.namespace]) {
+							definedTags[tag.namespace] = {};
+						}
+						definedTags[tag.namespace][tag.key] = tag.value || '';
+					}
+				}
+			}
+
 			const model = new ChatOciGenerativeAi({
 				model: modelName,
 				compartmentId: compartmentId || credentials.tenancyOcid as string,
@@ -195,6 +302,8 @@ export class LmChatOciGenerativeAi implements INodeType {
 						Region.fromRegionId(credentials.region as string),
 					),
 				},
+				freeformTags: Object.keys(freeformTags).length > 0 ? freeformTags : undefined,
+				definedTags: Object.keys(definedTags).length > 0 ? definedTags : undefined,
 				...options,
 				callbacks: [new N8nLlmTracing(this)],
 				onFailedAttempt: makeN8nLlmFailedAttemptHandler(this),

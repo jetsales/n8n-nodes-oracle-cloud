@@ -13,7 +13,7 @@ import {
 	assertParamIsNumber,
 } from 'n8n-workflow';
 import oracledb from 'oracledb';
-import { DynamicTool } from 'langchain/tools';
+import { DynamicTool } from '@langchain/core/tools';
 import type { VectorStore } from '@langchain/core/vectorstores';
 import type { BaseDocumentCompressor } from '@langchain/core/retrievers/document_compressors';
 

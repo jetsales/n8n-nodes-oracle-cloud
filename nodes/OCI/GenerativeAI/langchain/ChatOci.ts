@@ -228,6 +228,10 @@ export interface OciGenerativeAiInput extends BaseChatModelParams {
 	presencePenalty?: number;
 
 	tools?: (model.ToolDefinition | model.CohereTool)[];
+
+	// Tags for cost tracking
+	freeformTags?: Record<string, string>;
+	definedTags?: Record<string, Record<string, string>>;
 }
 
 export class ChatOciGenerativeAi extends BaseChatModel {
@@ -247,6 +251,10 @@ export class ChatOciGenerativeAi extends BaseChatModel {
 
 	tools?: (model.ToolDefinition | model.CohereTool)[];
 
+	// Tags for cost tracking
+	freeformTags?: Record<string, string>;
+	definedTags?: Record<string, Record<string, string>>;
+
 	constructor(fields: OciGenerativeAiInput) {
 		super(fields);
 		this.model = fields.model;
@@ -264,6 +272,10 @@ export class ChatOciGenerativeAi extends BaseChatModel {
 		});
 
 		this.tools = fields.tools;
+
+		// Tags for cost tracking
+		this.freeformTags = fields.freeformTags;
+		this.definedTags = fields.definedTags;
 	}
 
 	_llmType() {
@@ -305,7 +317,9 @@ export class ChatOciGenerativeAi extends BaseChatModel {
 			// maxTokens: this.maxTokens,
 			compartmentId: this.compartmentId,
 			auth: this.auth,
-			tools: ociTools
+			tools: ociTools,
+			freeformTags: this.freeformTags,
+			definedTags: this.definedTags,
 		};
 		return new (this.constructor as new (fields: OciGenerativeAiInput) => this)(fields);
 	}
@@ -426,7 +440,8 @@ export class ChatOciGenerativeAi extends BaseChatModel {
 			} as models.GenericChatRequest;
 		}
 
-		const chatDetails: models.ChatDetails = {
+		// Build chatDetails with tags (using 'as any' because SDK types don't include tags yet)
+		const chatDetails: any = {
 			compartmentId: this.compartmentId,
 			servingMode: {
 				servingType: 'ON_DEMAND',
@@ -434,6 +449,15 @@ export class ChatOciGenerativeAi extends BaseChatModel {
 			},
 			chatRequest: chatRequest,
 		};
+
+		// Add tags for cost tracking if provided
+		if (this.freeformTags && Object.keys(this.freeformTags).length > 0) {
+			chatDetails.freeformTags = this.freeformTags;
+		}
+		if (this.definedTags && Object.keys(this.definedTags).length > 0) {
+			chatDetails.definedTags = this.definedTags;
+		}
+
 		const response = await this.client.chat({ chatDetails }) as ChatResponse;
 
 		let text: string;
