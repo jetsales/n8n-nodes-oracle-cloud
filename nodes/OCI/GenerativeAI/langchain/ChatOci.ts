@@ -94,6 +94,22 @@ function jsonSchemaToCoherePrameters(jsonSchema: JsonSchema7Type): Record<string
 	return parameters;
 }
 
+// Recursively remove properties not accepted by Gemini models (e.g. $schema, additionalProperties)
+function cleanJsonSchema(obj: Record<string, any>): void {
+	delete obj['$schema'];
+	delete obj['additionalProperties'];
+	if (obj.properties) {
+		for (const key of Object.keys(obj.properties)) {
+			if (obj.properties[key] && typeof obj.properties[key] === 'object') {
+				cleanJsonSchema(obj.properties[key]);
+			}
+		}
+	}
+	if (obj.items && typeof obj.items === 'object') {
+		cleanJsonSchema(obj.items);
+	}
+}
+
 // TODO: hadle multimodal messages (img)
 function _toOciGenericApiMessage(message: BaseMessage) {
 	if (isHumanMessage(message)) {
@@ -298,8 +314,7 @@ export class ChatOciGenerativeAi extends BaseChatModel {
 		} else {
 			genericTools = tools.map((tool) => {
 				const jsonSchema: Record<string, any> = toJsonSchema(tool.schema) as Record<string, any>;
-				delete jsonSchema['$schema'];
-				delete jsonSchema['additionalProperties'];
+				cleanJsonSchema(jsonSchema);
 				return {
 					name: tool.name,
 					description: tool.description,
