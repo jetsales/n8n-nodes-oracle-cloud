@@ -508,12 +508,12 @@ export class ChatOciGenerativeAi extends BaseChatModel {
 				const choice = genericResponse.choices.at(0);
 				const assistantMessage = choice?.message as model.AssistantMessage
 
-				toolCalls = assistantMessage?.toolCalls?.filter((toolCall) => toolCall).map((toolCall: model.FunctionCall) => {
+				toolCalls = assistantMessage?.toolCalls?.filter((toolCall) => toolCall).map((toolCall: model.FunctionCall, index: number) => {
 					const args: Record<string, any> = JSON.parse(toolCall.arguments || "");
 					return {
 						name: toolCall.name,
 						args,
-						id: toolCall.id,
+						id: toolCall.id || `call_${Date.now()}_${index}`,
 						type: "tool_call"
 					} as ToolCall
 				})
