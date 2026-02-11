@@ -127,6 +127,20 @@ export class SpeechTranscriptionOci implements INodeType {
             description: 'Optional max speakers for diarization (0 to let service decide)'
           },
 					{
+            displayName: 'Output Bucket Name',
+            name: 'outputBucketName',
+            type: 'string',
+            default: '',
+            description: 'Bucket to store transcription results. If empty, uses the same bucket as the input audio.',
+          },
+					{
+            displayName: 'Output Bucket Namespace',
+            name: 'outputBucketNamespace',
+            type: 'string',
+            default: '',
+            description: 'Namespace of the output bucket. If empty, uses the same namespace as the input audio.',
+          },
+					{
             displayName: 'Output Prefix',
             name: 'outputPrefix',
             type: 'string',
@@ -202,6 +216,8 @@ export class SpeechTranscriptionOci implements INodeType {
         const numberOfSpeakers = (options.numberOfSpeakers as number) ?? 0;
         const audioObjectName = this.getNodeParameter('audioObjectName', i) as string;
         const outputPrefix = (options.outputPrefix as string) ?? 'transcriptions/';
+        const outputBucketName = (options.outputBucketName as string) || bucketName;
+        const outputBucketNamespace = (options.outputBucketNamespace as string) || bucketNamespace;
         const pollIntervalSeconds = (options.pollIntervalSeconds as number) ?? 2;
         const maxWaitMinutes = (options.maxWaitMinutes as number) ?? 30;
         const strictOptions = (options.strictOptions as boolean) ?? true;
@@ -220,8 +236,8 @@ export class SpeechTranscriptionOci implements INodeType {
             ],
           },
           outputLocation: {
-            namespaceName: bucketNamespace,
-            bucketName,
+            namespaceName: outputBucketNamespace,
+            bucketName: outputBucketName,
             prefix: outputPrefix,
           },
           modelDetails: {
@@ -318,8 +334,8 @@ export class SpeechTranscriptionOci implements INodeType {
         let allObjects: Array<{ name: string }> = [];
         for (const prefixToTry of prefixesToTry) {
           const listResp = await objectClient.listObjects({
-            namespaceName: bucketNamespace,
-            bucketName,
+            namespaceName: outputBucketNamespace,
+            bucketName: outputBucketName,
             prefix: prefixToTry,
           });
           const objects = (listResp?.listObjects?.objects || listResp?.objects || []).map((o: any) => ({ name: o.name || o.objectName }));
@@ -351,8 +367,8 @@ export class SpeechTranscriptionOci implements INodeType {
         }
 
         const getObjResp = await objectClient.getObject({
-          namespaceName: bucketNamespace,
-          bucketName,
+          namespaceName: outputBucketNamespace,
+          bucketName: outputBucketName,
           objectName: jsonObjectName,
         });
 

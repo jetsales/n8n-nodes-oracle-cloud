@@ -297,10 +297,13 @@ export class ChatOciGenerativeAi extends BaseChatModel {
 			});
 		} else {
 			genericTools = tools.map((tool) => {
+				const jsonSchema: Record<string, any> = toJsonSchema(tool.schema) as Record<string, any>;
+				delete jsonSchema['$schema'];
+				delete jsonSchema['additionalProperties'];
 				return {
 					name: tool.name,
 					description: tool.description,
-					parameters: toJsonSchema(tool.schema),
+					parameters: jsonSchema,
 					type: 'FUNCTION'
 				} as model.FunctionDefinition
 			})
@@ -347,7 +350,7 @@ export class ChatOciGenerativeAi extends BaseChatModel {
 			}
 		}
 
-		if (this.model === "xai.grok-4") {
+		if (this.model === "xai.grok-4" || this.model.startsWith('google')) {
 			frequencyPenalty = undefined;
 			presencePenalty = undefined;
 		}
@@ -458,40 +461,68 @@ export class ChatOciGenerativeAi extends BaseChatModel {
 			chatDetails.definedTags = this.definedTags;
 		}
 
-		const response = await this.client.chat({ chatDetails }) as ChatResponse;
+		let response: ChatResponse;
+		try {
+			response = await this.client.chat({ chatDetails }) as ChatResponse;
+		} catch (error: any) {
+			const statusCode = error?.statusCode ?? error?.status ?? error?.response?.status;
+			const serviceCode = error?.serviceCode ?? 'Unknown';
+			const opcRequestId = error?.opcRequestId ?? error?.headers?.['opc-request-id'] ?? 'N/A';
+			const errorMessage = error?.message ?? 'Unknown error';
+
+			const detail = [
+				`OCI Generative AI API error`,
+				`Model: ${this.model}`,
+				`Status: ${statusCode ?? 'N/A'}`,
+				`ServiceCode: ${serviceCode}`,
+				`opc-request-id: ${opcRequestId}`,
+				`Message: ${errorMessage}`,
+			].join(' | ');
+
+			console.error(`[ChatOci] ${detail}`);
+
+			const enrichedError = new Error(detail);
+			(enrichedError as any).statusCode = statusCode;
+			(enrichedError as any).status = statusCode;
+			throw enrichedError;
+		}
 
 		let text: string;
 		let toolCalls: ToolCall[] | undefined;
 
-		if (response.chatResult.chatResponse.apiFormat === 'COHERE') {
-			const cohereResponse = response.chatResult.chatResponse as models.CohereChatResponse;
+		try {
+			if (response.chatResult.chatResponse.apiFormat === 'COHERE') {
+				const cohereResponse = response.chatResult.chatResponse as models.CohereChatResponse;
 
-			toolCalls = cohereResponse.toolCalls?.map((toolCall) => {
-				return {
-					name: toolCall.name,
-					args: toolCall.parameters,
-					id: toolCall.name,
-					type: "tool_call"
-				} as ToolCall
-			});
-			text = cohereResponse.text;
-		} else {
-			const genericResponse = response.chatResult.chatResponse as models.GenericChatResponse;
-			const choice = genericResponse.choices.at(0);
-			const assistantMessage = choice?.message as model.AssistantMessage
+				toolCalls = cohereResponse.toolCalls?.map((toolCall) => {
+					return {
+						name: toolCall.name,
+						args: toolCall.parameters,
+						id: toolCall.name,
+						type: "tool_call"
+					} as ToolCall
+				});
+				text = cohereResponse.text;
+			} else {
+				const genericResponse = response.chatResult.chatResponse as models.GenericChatResponse;
+				const choice = genericResponse.choices.at(0);
+				const assistantMessage = choice?.message as model.AssistantMessage
 
-			toolCalls = assistantMessage?.toolCalls?.filter((toolCall) => toolCall).map((toolCall: model.FunctionCall) => {
-				const args: Record<string, any> = JSON.parse(toolCall.arguments || "");
-				return {
-					name: toolCall.name,
-					args,
-					id: toolCall.id,
-					type: "tool_call"
-				} as ToolCall
-			})
-			text = choice?.message?.content?.map((c) => (c as models.TextContent).text).join('') || '';
-			// toolCalls = choice?.message?.
-			// toolCalls = choice.message.toolCalls as ToolCall[];
+				toolCalls = assistantMessage?.toolCalls?.filter((toolCall) => toolCall).map((toolCall: model.FunctionCall) => {
+					const args: Record<string, any> = JSON.parse(toolCall.arguments || "");
+					return {
+						name: toolCall.name,
+						args,
+						id: toolCall.id,
+						type: "tool_call"
+					} as ToolCall
+				})
+				text = choice?.message?.content?.map((c) => (c as models.TextContent).text).join('') || '';
+			}
+		} catch (error: any) {
+			const detail = `Failed to parse OCI response | Model: ${this.model} | Error: ${error?.message}`;
+			console.error(`[ChatOci] ${detail}`);
+			throw new Error(detail);
 		}
 
 		return {
