@@ -1,0 +1,100 @@
+name: AI Code Review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: read
+
+jobs:
+  # ===========================================================================
+  # Job de Validação: Validar secrets antes de executar revisão
+  # ===========================================================================
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate required secrets
+        id: validate-secrets
+        run: |
+          echo "🔍 Validando secrets obrigatórios..."
+
+          # Validar OPENAI_API_KEY (obrigatório)
+          if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
+            echo "::error::OPENAI_API_KEY não está configurado"
+            echo "::error::Configure o secret em: Settings > Secrets > Actions"
+            echo "error=true" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+          echo "✅ OPENAI_API_KEY configurado"
+          echo "error=false" >> $GITHUB_OUTPUT
+
+  # ===========================================================================
+  # Job Principal: Executar revisão de código por IA
+  # ===========================================================================
+  ai_review:
+    needs: validate
+    if: needs.validate.result == 'success'
+    uses: jetsales/ai-code-review-workflow/.github/workflows/ai-code-review.yaml@main
+    secrets:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      # NODE_AUTH_TOKEN: Token opcional para autenticação em pacotes privados do npm
+      # Mapeado de GPR_TOKEN_PLATFORMS_CLASSIC (GitHub Package Registry token)
+      # Se não configurado, o workflow funcionará normalmente, mas pacotes privados não estarão disponíveis
+      NODE_AUTH_TOKEN: ${{ secrets.GPR_TOKEN_PLATFORMS_CLASSIC }}
+
+  # ===========================================================================
+  # Job de Tratamento de Erros: Sempre executa para reportar erros
+  # ===========================================================================
+  error_handling:
+    runs-on: ubuntu-latest
+    needs: [validate, ai_review]
+    if: always()
+    steps:
+      - name: Error handling and summary
+        run: |
+          echo "================================================"
+          echo "📊 RESUMO DA EXECUÇÃO DO WORKFLOW"
+          echo "================================================"
+          echo ""
+
+          # Verificar se validação de secrets falhou
+          if [ "${{ needs.validate.result }}" == "failure" ]; then
+            echo "❌ Status: FALHA - Validação de secrets"
+            echo "⚠️  O workflow falhou durante a validação de secrets obrigatórios"
+            echo ""
+            echo "Ação necessária:"
+            echo "1. Vá para Settings > Secrets > Actions"
+            echo "2. Adicione o secret OPENAI_API_KEY"
+            echo "3. Execute o workflow novamente"
+            exit 1
+          fi
+
+          # Verificar se o workflow de revisão falhou
+          if [ "${{ needs.ai_review.result }}" == "failure" ]; then
+            echo "❌ Status: FALHA - Revisão de código"
+            echo "⚠️  O workflow de revisão falhou durante a execução"
+            echo ""
+            echo "Verifique os logs do job 'ai_review' para mais detalhes sobre o erro"
+            exit 1
+          fi
+
+          # Verificar se foi cancelado
+          if [ "${{ needs.ai_review.result }}" == "cancelled" ]; then
+            echo "⚠️  Status: CANCELADO"
+            echo "O workflow foi cancelado antes de completar"
+            exit 1
+          fi
+
+          # Sucesso
+          if [ "${{ needs.ai_review.result }}" == "success" ]; then
+            echo "✅ Status: SUCESSO"
+            echo "💬 Revisão de código por IA concluída com sucesso"
+            echo "📝 Verifique o comentário no PR para ver a revisão"
+          fi
+
+          echo ""
+          echo "================================================"
+
